@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/wolkansezer/zetx-boost/releases/latest"><b>⬇ ZETXBoost.exe İndir (v1.0.0)</b></a>
+  <a href="https://github.com/wolkansezer/zetx-boost/raw/main/release/ZETXBoost.exe"><b>⬇ ZETXBoost.exe İndir (v1.0.0 · 72 MB)</b></a>
 </p>
 
 ---
@@ -57,7 +57,7 @@ Rozet sayfası belirlenen aralıkta (varsayılan 5 dk) yeniden taranır, kartı 
 ## Kullanım
 
 1. **Steam'i aç** ve hesabına giriş yap.
-2. [Releases](https://github.com/wolkansezer/zetx-boost/releases/latest) sayfasından **ZETXBoost.exe**'yi indir ve çalıştır.
+2. **[ZETXBoost.exe'yi indir](https://github.com/wolkansezer/zetx-boost/raw/main/release/ZETXBoost.exe)** ve çalıştır. Windows SmartScreen uyarı verirse: *Ek bilgi → Yine de çalıştır*.
 3. `steam_api64.dll` yüklü oyunlarından otomatik bulunur. Bulunamazsa: **Ayarlar → Gözat** ile herhangi bir Steam oyununun klasöründeki `steam_api64.dll` dosyasını seç.
 4. **Saat Kasma** sekmesinde oyun ekle (AppID, mağaza linki ya da arama) veya **Kütüphane** sekmesinden seç → **Başlat**.
 
@@ -104,6 +104,9 @@ dotnet publish ZETXBoost.csproj -c Release -o cikti
 | `SteamLocator.cs` | Steam yolu, kütüphaneler, yüklü oyunlar, aktif kullanıcı |
 | `AppSettings.cs` | Ayarlar, Windows başlangıç, DPAPI şifreleme |
 | `MainForm.cs` / `Theme.cs` | Arayüz ve koyu HUD teması |
+| `release/ZETXBoost.exe` | Derlenmiş hazır program (v1.0.0) |
+
+Sürüm notları: [CHANGELOG.md](CHANGELOG.md)
 
 ## Program Sahibi
 
