@@ -1,5 +1,14 @@
 # ZETX Boost — Sürüm Notları
 
+## v1.0.1 (05.11.2026)
+
+### Düzeltmeler
+- **Oynanma süresi geri sarılıyordu:** Durdururken ve kapatırken oyunlar zorla öldürülüyordu, bu yüzden Steam oturumu kaydetmiyordu. Artık her oyun `SteamAPI_Shutdown` ile düzgün kapanıyor ve süre Steam'e yazılıyor.
+- **Rozet taraması hata veriyordu:** Özel profil adresine (/id/...) yönlendirmede oturum çerezi kayboluyordu. Çerezler artık yönlendirmelerde korunuyor.
+- Rozet sayfası numaraları doğru okunuyor (çok sayfalı rozetler).
+- Çerez çözülmüş (`||`) biçimde yapıştırılsa da çalışıyor.
+- Tarama hataları anlaşılır mesajla gösteriliyor (geçersiz oturum, başka hesabın çerezi, 429 vb.).
+
 ## v1.0.0 — ilk sürüm (04.11.2026)
 
 Steam saat kasma (Hour Boost) ve kart farmı aracı. Kurulum gerektirmez, tek dosya.

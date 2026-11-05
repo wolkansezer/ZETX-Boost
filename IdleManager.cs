@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading;
 
 namespace ZETXBoost
 {
@@ -110,7 +111,7 @@ namespace ZETXBoost
                 if (!_map.TryGetValue(appId, out s)) return;
                 _map.Remove(appId);
             }
-            Kill(s);
+            StopGracefully(new List<IdleSession> { s });
         }
 
         public void StopAll(IdleOwner? owner = null)
@@ -121,14 +122,38 @@ namespace ZETXBoost
                 list = _map.Values.Where(x => owner == null || x.Owner == owner.Value).ToList();
                 foreach (var s in list) _map.Remove(s.AppId);
             }
-            foreach (var s in list) Kill(s);
+            StopGracefully(list);
         }
 
-        private static void Kill(IdleSession s)
+        /// <summary>
+        /// Önce tüm alt işlemlere "kapan" sinyali gönderir (SteamAPI_Shutdown çağırırlar,
+        /// Steam süreyi kaydeder), en fazla 5 sn bekler; kapanmayanı zorla sonlandırır.
+        /// </summary>
+        private static void StopGracefully(List<IdleSession> list)
         {
-            s.Stopping = true;
-            try { if (!s.Proc.HasExited) s.Proc.Kill(); } catch { }
-            try { s.Proc.Dispose(); } catch { }
+            if (list.Count == 0) return;
+            foreach (var s in list)
+            {
+                s.Stopping = true;
+                try
+                {
+                    if (EventWaitHandle.TryOpenExisting(IdleWorker.StopEventName(s.Proc.Id), out var ev))
+                        using (ev) ev.Set();
+                }
+                catch { }
+            }
+
+            var deadline = DateTime.Now.AddSeconds(5);
+            foreach (var s in list)
+            {
+                try
+                {
+                    int left = (int)Math.Max(0, (deadline - DateTime.Now).TotalMilliseconds);
+                    if (!s.Proc.HasExited && !s.Proc.WaitForExit(left)) s.Proc.Kill();
+                }
+                catch { }
+                try { s.Proc.Dispose(); } catch { }
+            }
         }
 
         public void Dispose() { StopAll(); }

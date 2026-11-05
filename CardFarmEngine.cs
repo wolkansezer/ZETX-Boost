@@ -27,6 +27,7 @@ namespace ZETXBoost
         public int Mode { get; set; }
         public int RecheckMinutes { get; set; } = 5;
         public DateTime NextCheck => _nextCheck;
+        public string LastError { get; private set; }
 
         public event Action<string> Log;
         public event Action Updated;
@@ -46,6 +47,7 @@ namespace ZETXBoost
             _busy = true;
             try
             {
+                LastError = null;
                 Games = await SteamWeb.ScanBadgesAsync(steamId, cookie);
                 Log?.Invoke("Tarama bitti: " + Games.Count + " oyunda toplam " + Games.Sum(g => g.DropsLeft) + " kart düşüşü kaldı.");
                 Updated?.Invoke();
@@ -53,6 +55,7 @@ namespace ZETXBoost
             }
             catch (Exception ex)
             {
+                LastError = ex.Message;
                 Log?.Invoke("Tarama hatası: " + ex.Message);
                 return false;
             }

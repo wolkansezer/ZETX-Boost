@@ -638,10 +638,12 @@ namespace ZETXBoost
 
         private void StopEverything()
         {
+            Cursor = Cursors.WaitCursor;
             StopBoost(null);
             _cards.Stop(true);
+            Cursor = Cursors.Default;
             UpdateCardButtons();
-            AddLog("Tüm oturumlar durduruldu.");
+            AddLog("Tüm oturumlar düzgün kapatıldı, süreler Steam'e kaydedildi.");
         }
 
         private void UpdateBoostButtons()
@@ -745,9 +747,15 @@ namespace ZETXBoost
             if (!ReadCardCredentials(out string sid, out string cookie)) return;
             _btnCardScan.Enabled = false;
             _lblCardSummary.Text = "Rozet sayfaları taranıyor...";
-            await _cards.ScanOnlyAsync(sid, cookie);
+            bool ok = await _cards.ScanOnlyAsync(sid, cookie);
             _btnCardScan.Enabled = true;
             RefreshCardList();
+            if (!ok)
+            {
+                _lblCardSummary.Text = "Tarama başarısız: " + _cards.LastError;
+                MessageBox.Show("Rozet taraması başarısız:\n\n" + _cards.LastError, Program.AppName,
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
         }
 
         private async Task StartCards()

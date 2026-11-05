@@ -71,15 +71,24 @@ namespace ZETXBoost
             if (NativeLibrary.TryGetExport(lib, "SteamAPI_Shutdown", out IntPtr pShut))
                 shutdown = Marshal.GetDelegateForFunctionPointer<VoidFn>(pShut);
 
-            while (ParentAlive(parentPid))
+            // Ana program bu olayı tetikleyince düzgün kapanırız (süre Steam'e kaydedilsin diye).
+            using (var stopEvent = new EventWaitHandle(false, EventResetMode.ManualReset, StopEventName(Environment.ProcessId)))
             {
-                try { runCallbacks?.Invoke(); } catch { }
-                Thread.Sleep(1000);
+                while (ParentAlive(parentPid))
+                {
+                    try { runCallbacks?.Invoke(); } catch { }
+                    if (stopEvent.WaitOne(1000)) break;
+                }
             }
 
+            // Steam'e "oyun kapandı" bildirimi: oynanma süresi sunucuya bu sırada yazılır.
+            try { runCallbacks?.Invoke(); } catch { }
             try { shutdown?.Invoke(); } catch { }
+            Thread.Sleep(300);
             return ExitOk;
         }
+
+        public static string StopEventName(int pid) => @"Local\ZETXBoost_Stop_" + pid;
 
         private static bool ParentAlive(int pid)
         {

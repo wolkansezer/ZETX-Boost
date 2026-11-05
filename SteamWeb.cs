@@ -91,76 +91,125 @@ namespace ZETXBoost
         public static string NormalizeCookie(string raw)
         {
             if (string.IsNullOrWhiteSpace(raw)) return "";
-            raw = raw.Trim();
-            if (raw.StartsWith("steamLoginSecure=", StringComparison.OrdinalIgnoreCase))
-                raw = raw.Substring("steamLoginSecure=".Length);
+            raw = raw.Trim().Trim('"');
+            int idx = raw.IndexOf("steamLoginSecure=", StringComparison.OrdinalIgnoreCase);
+            if (idx >= 0) raw = raw.Substring(idx + "steamLoginSecure=".Length);
             int semi = raw.IndexOf(';');
             if (semi >= 0) raw = raw.Substring(0, semi);
-            return raw.Trim();
+            raw = raw.Trim().Replace(" ", "");
+            // Çözülmüş hâli (|| ile) yapıştırıldıysa Steam'in beklediği kodlu biçime çevir.
+            raw = raw.Replace("|", "%7C");
+            return raw;
         }
 
         /// <summary>steamLoginSecure çerezinin başındaki SteamID64'ü çıkarır.</summary>
         public static string SteamIdFromCookie(string cookie)
         {
-            var m = Regex.Match(cookie ?? "", @"^(7656\d{13})");
+            var m = Regex.Match(Uri.UnescapeDataString(cookie ?? ""), @"^(7656\d{13})");
             return m.Success ? m.Groups[1].Value : null;
         }
 
         /// <summary>Rozet sayfalarını tarar; kalan kart düşüşü olan oyunları döndürür.</summary>
         public static async Task<List<CardGame>> ScanBadgesAsync(string steamId64, string cookie)
         {
-            var result = new List<CardGame>();
-            int page = 1, maxPage = 1;
-            do
+            // Çerezler CookieContainer'da: Steam /profiles/ID adresini /id/özeladın adresine
+            // yönlendirdiğinde de oturum çerezi gönderilmeye devam eder.
+            var jar = new CookieContainer();
+            var community = new Uri("https://steamcommunity.com/");
+            void Add(string n, string v)
             {
-                string url = "https://steamcommunity.com/profiles/" + steamId64 + "/badges/?l=english&p=" + page;
-                var req = new HttpRequestMessage(HttpMethod.Get, url);
-                req.Headers.Add("Cookie", "steamLoginSecure=" + cookie + "; Steam_Language=english");
-                using (var resp = await Http.SendAsync(req))
-                {
-                    resp.EnsureSuccessStatusCode();
-                    string html = await resp.Content.ReadAsStringAsync();
+                jar.Add(community, new Cookie(n, v, "/", "steamcommunity.com") { Secure = true });
+            }
+            Add("steamLoginSecure", cookie);
+            Add("Steam_Language", "english");
+            Add("birthtime", "283993201");
+            Add("mature_content", "1");
 
-                    if (html.Contains("g_steamID = false"))
-                        throw new InvalidOperationException("Steam oturumu geçersiz. steamLoginSecure çerezini yeniden al.");
+            var handler = new HttpClientHandler
+            {
+                CookieContainer = jar,
+                UseCookies = true,
+                AllowAutoRedirect = true,
+                MaxAutomaticRedirections = 5,
+                AutomaticDecompression = DecompressionMethods.All
+            };
+
+            var result = new List<CardGame>();
+            using (var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) })
+            {
+                http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36");
+                http.DefaultRequestHeaders.AcceptLanguage.ParseAdd("en-US,en;q=0.8");
+
+                int page = 1, maxPage = 1;
+                do
+                {
+                    string url = "https://steamcommunity.com/profiles/" + steamId64 + "/badges/?l=english&p=" + page;
+                    string html;
+                    using (var resp = await http.GetAsync(url))
+                    {
+                        int code = (int)resp.StatusCode;
+                        if (code == 429)
+                            throw new InvalidOperationException("Steam çok fazla istek dedi (429). Birkaç dakika sonra tekrar dene.");
+                        if (code == 401 || code == 403)
+                            throw new InvalidOperationException("Steam erişimi reddetti (" + code + "). Çerezi yeniden al.");
+                        if (!resp.IsSuccessStatusCode)
+                            throw new InvalidOperationException("Steam rozet sayfası hata verdi: HTTP " + code);
+
+                        string finalUrl = resp.RequestMessage?.RequestUri?.ToString() ?? "";
+                        if (finalUrl.Contains("/login"))
+                            throw new InvalidOperationException("Steam oturumu geçersiz (giriş sayfasına yönlendirildi). steamLoginSecure çerezini yeniden al.");
+                        html = await resp.Content.ReadAsStringAsync();
+                    }
+
+                    if (Regex.IsMatch(html, @"g_steamID\s*=\s*false"))
+                        throw new InvalidOperationException("Steam oturumu açık görünmüyor. Tarayıcıda steamcommunity.com'a giriş yapıp steamLoginSecure çerezini YENİDEN kopyala (çerez her girişte değişir).");
+
+                    var mLogged = Regex.Match(html, @"g_steamID\s*=\s*""(\d{17})""");
+                    if (mLogged.Success && mLogged.Groups[1].Value != steamId64)
+                        throw new InvalidOperationException("Çerez başka bir hesaba ait (" + mLogged.Groups[1].Value + "). SteamID64 alanını boş bırakıp tekrar dene.");
 
                     if (page == 1)
-                        foreach (Match pm in Regex.Matches(html, @"badges/\?p=(\d+)"))
+                        foreach (Match pm in Regex.Matches(html, @"class=""pagelink""[^>]*href=""[^""]*[?&]p=(\d+)"))
                             if (int.TryParse(pm.Groups[1].Value, out int pn) && pn > maxPage) maxPage = pn;
 
-                    string[] rows = Regex.Split(html, "<div class=\"badge_row ");
-                    for (int i = 1; i < rows.Length; i++)
-                    {
-                        string r = rows[i];
-                        var mId = Regex.Match(r, @"gamecards/(\d+)/");
-                        var mDrops = Regex.Match(r, @"(\d+)\s+card drops?\s+remaining", RegexOptions.IgnoreCase);
-                        if (!mId.Success || !mDrops.Success) continue;
-                        if (!uint.TryParse(mId.Groups[1].Value, out uint id)) continue;
-                        int drops = int.Parse(mDrops.Groups[1].Value, CultureInfo.InvariantCulture);
-                        if (drops <= 0) continue;
+                    ParseBadgeRows(html, result);
 
-                        double hours = 0;
-                        var mHrs = Regex.Match(r, @"([\d,\.]+)\s+hrs? on record", RegexOptions.IgnoreCase);
-                        if (mHrs.Success)
-                            double.TryParse(mHrs.Groups[1].Value.Replace(",", ""), NumberStyles.Float, CultureInfo.InvariantCulture, out hours);
-
-                        string name = "AppID " + id;
-                        var mName = Regex.Match(r, "<div class=\"badge_title\">\\s*(.*?)(&nbsp;|<)", RegexOptions.Singleline);
-                        if (mName.Success)
-                        {
-                            string n = WebUtility.HtmlDecode(mName.Groups[1].Value).Trim();
-                            if (n.Length > 0) name = n;
-                        }
-
-                        if (result.All(x => x.AppId != id))
-                            result.Add(new CardGame { AppId = id, Name = name, DropsLeft = drops, Hours = hours });
-                    }
-                }
-                page++;
-                if (page <= maxPage) await Task.Delay(700);
-            } while (page <= maxPage && page <= 50);
-
+                    page++;
+                    if (page <= maxPage) await Task.Delay(800);
+                } while (page <= maxPage && page <= 50);
+            }
             return result;
+        }
+
+        internal static void ParseBadgeRows(string html, List<CardGame> result)
+        {
+            string[] rows = Regex.Split(html, @"<div class=""badge_row[ ""]");
+            for (int i = 1; i < rows.Length; i++)
+            {
+                string r = rows[i];
+                var mId = Regex.Match(r, @"/gamecards/(\d+)");
+                if (!mId.Success || !uint.TryParse(mId.Groups[1].Value, out uint id)) continue;
+                var mDrops = Regex.Match(r, @"(\d+)\s+card drops?\s+remaining", RegexOptions.IgnoreCase);
+                if (!mDrops.Success) continue;
+                int drops = int.Parse(mDrops.Groups[1].Value, CultureInfo.InvariantCulture);
+                if (drops <= 0) continue;
+
+                double hours = 0;
+                var mHrs = Regex.Match(r, @"([\d,\.]+)\s+hrs? on record", RegexOptions.IgnoreCase);
+                if (mHrs.Success)
+                    double.TryParse(mHrs.Groups[1].Value.Replace(",", ""), NumberStyles.Float, CultureInfo.InvariantCulture, out hours);
+
+                string name = "AppID " + id;
+                var mName = Regex.Match(r, @"<div class=""badge_title"">\s*(.*?)(&nbsp;|<)", RegexOptions.Singleline);
+                if (mName.Success)
+                {
+                    string n = WebUtility.HtmlDecode(mName.Groups[1].Value).Trim();
+                    if (n.Length > 0) name = n;
+                }
+
+                if (result.All(x => x.AppId != id))
+                    result.Add(new CardGame { AppId = id, Name = name, DropsLeft = drops, Hours = hours });
+            }
         }
     }
 }
