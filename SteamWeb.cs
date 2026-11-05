@@ -102,6 +102,78 @@ namespace ZETXBoost
             return raw;
         }
 
+        /// <summary>
+        /// steamLoginSecure çerezini çözüp denetler. Sorun yoksa null, varsa Türkçe açıklama döner.
+        /// Çerez biçimi: STEAMID64%7C%7C(JWT)  — JWT içinde sub (SteamID), aud (web:community / web:store), exp.
+        /// </summary>
+        public static string ValidateCookie(string cookie, out string steamId64)
+        {
+            steamId64 = null;
+            if (string.IsNullOrWhiteSpace(cookie))
+                return "steamLoginSecure çerezi boş.";
+
+            string decoded = Uri.UnescapeDataString(cookie);
+            int sep = decoded.IndexOf("||", StringComparison.Ordinal);
+            if (sep < 0)
+            {
+                if (decoded.StartsWith("eyJ"))
+                    return "Çerezin başı eksik. Value değeri 7656... ile başlamalı; tamamını kopyala (çift tıklayıp Ctrl+A, Ctrl+C).";
+                return "Bu bir steamLoginSecure değeri gibi görünmüyor. Value sütunundaki değer 7656...%7C%7CeyJ... şeklinde olmalı.";
+            }
+
+            string idPart = decoded.Substring(0, sep).Trim();
+            if (idPart.Length != 17 || !idPart.StartsWith("7656") || !idPart.All(char.IsDigit))
+                return "Çerezin başındaki SteamID okunamadı. Değeri eksiksiz kopyaladığından emin ol.";
+            steamId64 = idPart;
+
+            string jwt = decoded.Substring(sep + 2).Trim();
+            string[] parts = jwt.Split('.');
+            if (parts.Length < 2)
+                return "Çerez yarım kopyalanmış görünüyor (çok kısa). Value değerinin tamamını kopyala.";
+
+            try
+            {
+                string b64 = parts[1].Replace('-', '+').Replace('_', '/');
+                b64 = b64.PadRight(b64.Length + (4 - b64.Length % 4) % 4, '=');
+                string json = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(b64));
+                using (var doc = JsonDocument.Parse(json))
+                {
+                    var root = doc.RootElement;
+
+                    if (root.TryGetProperty("aud", out var aud))
+                    {
+                        string audText = aud.ValueKind == JsonValueKind.Array
+                            ? string.Join(",", aud.EnumerateArray().Select(a => a.GetString()))
+                            : aud.GetString() ?? "";
+                        if (!audText.Contains("web:community"))
+                        {
+                            if (audText.Contains("web:store"))
+                                return "Bu çerez MAĞAZA sitesinin (store.steampowered.com) çerezi.\n\n" +
+                                       "steamcommunity.com adresine git, F12 > Application > Cookies > https://steamcommunity.com altındaki steamLoginSecure değerini kopyala.";
+                            if (audText.Contains("client") || audText.Contains("renew"))
+                                return "Bu çerez Steam uygulamasına ait. Tarayıcıda steamcommunity.com'daki steamLoginSecure değerini kopyala.";
+                        }
+                    }
+
+                    if (root.TryGetProperty("exp", out var exp) && exp.TryGetInt64(out long expUnix))
+                    {
+                        var expires = DateTimeOffset.FromUnixTimeSeconds(expUnix);
+                        if (expires < DateTimeOffset.UtcNow)
+                            return "Çerezin süresi dolmuş (" + expires.ToLocalTime().ToString("dd.MM.yyyy HH:mm") + ").\n\n" +
+                                   "steamcommunity.com sayfasını yenile (F5), sonra steamLoginSecure değerini yeniden kopyala.";
+                    }
+
+                    if (root.TryGetProperty("sub", out var sub) && sub.GetString() is string subId && subId.Length == 17)
+                        steamId64 = subId;
+                }
+            }
+            catch
+            {
+                return "Çerez çözülemedi; büyük ihtimalle eksik kopyalandı. Value değerini baştan sona tekrar kopyala.";
+            }
+            return null;
+        }
+
         /// <summary>steamLoginSecure çerezinin başındaki SteamID64'ü çıkarır.</summary>
         public static string SteamIdFromCookie(string cookie)
         {

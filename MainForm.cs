@@ -727,15 +727,17 @@ namespace ZETXBoost
         private bool ReadCardCredentials(out string sid, out string cookie)
         {
             cookie = SteamWeb.NormalizeCookie(_tbCookie.Text);
-            sid = _tbSteamId.Text.Trim();
-            if (string.IsNullOrEmpty(sid)) sid = SteamWeb.SteamIdFromCookie(cookie) ?? SteamLocator.GetActiveSteamId64() ?? "";
-            _tbSteamId.Text = sid;
-            if (cookie.Length < 20 || sid.Length != 17)
+            sid = "";
+            string problem = SteamWeb.ValidateCookie(cookie, out string cookieSid);
+            if (problem != null)
             {
-                MessageBox.Show("SteamID64 (17 haneli) ve steamLoginSecure çerezi gerekli.\n\"Çerez nasıl alınır?\" bağlantısına bak.",
-                    Program.AppName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(problem, Program.AppName + " - Çerez", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return false;
             }
+            // SteamID her zaman çerezin sahibinden alınır (eski/yanlış kayıtlı ID sorun çıkarmasın).
+            sid = cookieSid;
+            _tbSteamId.Text = sid;
+            _tbCookie.Text = cookie;
             _s.SteamId64 = sid;
             _s.SetCookie(cookie);
             _s.Save();

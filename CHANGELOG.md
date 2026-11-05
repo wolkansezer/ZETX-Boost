@@ -7,6 +7,7 @@
 - **Rozet taraması hata veriyordu:** Özel profil adresine (/id/...) yönlendirmede oturum çerezi kayboluyordu. Çerezler artık yönlendirmelerde korunuyor.
 - Rozet sayfası numaraları doğru okunuyor (çok sayfalı rozetler).
 - Çerez çözülmüş (`||`) biçimde yapıştırılsa da çalışıyor.
+- Çerez doğrulama: mağaza çerezi, süresi dolmuş ya da eksik kopyalanmış çerez açıkça bildiriliyor; SteamID otomatik olarak çerezden alınıyor.
 - Tarama hataları anlaşılır mesajla gösteriliyor (geçersiz oturum, başka hesabın çerezi, 429 vb.).
 
 ## v1.0.0 — ilk sürüm (04.11.2026)
